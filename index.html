@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniDraft - Offline Blog Editor</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
+    <style>
+        :root {
+            --bg-dark: #1e1e1e;
+            --sidebar-bg: #252526;
+            --editor-bg: #1c1c1c;
+            --text-main: #d4d4d4;
+            --text-muted: #858585;
+            --accent: #007acc;
+            --accent-hover: #0062a3;
+            --border: #3c3c3c;
+            --nav-height: 55px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            overflow: hidden;
+            height: 100vh;
+            text-rendering: optimizeLegibility;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        /* Sidebar - Joplin Style */
+        .sidebar {
+            width: 260px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            transition: transform 0.2s ease;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-header h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .btn-new {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .btn-new:hover { background-color: var(--accent-hover); }
+
+        .notes-list {
+            list-style: none;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .note-item {
+            padding: 14px 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            cursor: pointer;
+            position: relative;
+            transition: background 0.15s;
+        }
+
+        .note-item:hover { background-color: rgba(255, 255, 255, 0.03); }
+
+        .note-item.active {
+            background-color: rgba(0, 122, 204, 0.15);
+            border-left: 4px solid var(--accent);
+        }
+
+        .note-item-title {
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+            color: #eee;
+        }
+
+        .note-item-date {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* Hoofd Editor Omgeving */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--editor-bg);
+            overflow: hidden;
+        }
+
+        .toolbar {
+            height: 55px;
+            background-color: var(--sidebar-bg);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 15px;
+        }
+
+        .title-input {
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            flex: 1;
+            outline: none;
+            padding: 5px 0;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tool-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-height: 36px;
+        }
+
+        .tool-btn:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: #fff;
+        }
+
+        .export-select {
+            background-color: var(--sidebar-bg);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            border-radius: 4px;
+            outline: none;
+            cursor: pointer;
+            font-size: 13px;
+            min-height: 36px;
+        }
+
+        .btn-delete { color: #f14c4c; border-color: rgba(241, 76, 76, 0.3); }
+        .btn-delete:hover { background-color: rgba(241, 76, 76, 0.1); color: #f14c4c; }
+
+        /* Split Screen Workspace */
+        .workspace {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .editor-pane, .preview-pane {
+            flex: 1;
+            height: 100%;
+            overflow-y: auto;
+            position: relative;
+            will-change: transform;
+        }
+
+        .editor-pane { border-right: 1px solid var(--border); }
+
+        .editor-textarea {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            border: none;
+            resize: none;
+            outline: none;
+            color: #e0e0e0;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 15px;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .preview-pane {
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+
+        /* Markdown Preview Styling */
+        .preview-pane h1, .preview-pane h2, .preview-pane h3 { margin-top: 1em; margin-bottom: 0.5em; color: #fff; }
+        .preview-pane p { margin-bottom: 1em; }
+        .preview-pane img { max-width: 100%; height: auto; border-radius: 4px; margin: 10px 0; border: 1px solid var(--border); }
+        .preview-pane blockquote { border-left: 4px solid var(--accent); padding-left: 15px; color: var(--text-muted); margin-bottom: 1em; }
+
+        /* Drag over effect */
+        .drag-over { background-color: rgba(0, 122, 204, 0.05) !important; border: 2px dashed var(--accent) !important; }
+
+        /* Mobiele Bottom Navigatie (Standaard verborgen op desktop) */
+        .mobile-nav {
+            display: none;
+            height: var(--nav-height);
+            background-color: var(--sidebar-bg);
+            border-top: 1px solid var(--border);
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100vw;
+            z-index: 100;
+        }
+
+        .mobile-nav-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .mobile-nav-btn.active { color: #fff; }
+        .mobile-nav-btn i { font-size: 18px; color: var(--text-muted); }
+        .mobile-nav-btn.active i { color: var(--accent); }
+
+        /* --- MOBIELE MEDIA QUERIES (BREAKPOINT 768PX) --- */
+        @media (max-width: 767.98px) {
+            body { padding-bottom: var(--nav-height); }
+            .app-container { width: 100vw; height: calc(100vh - var(--nav-height)); position: relative; }
+            
+            /* Maak alle hoofdsecties absoluut en fullscreen binnen container */
+            .sidebar, .editor-pane, .preview-pane {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 1;
+                display: none;
+            }
+
+            .sidebar { border-right: none; }
+            .editor-pane { border-right: none; }
+            .workspace { width: 100%; height: calc(100% - 55px); position: relative; }
+
+            /* Toon actieve weergave op basis van body class */
+            body.view-list .sidebar { display: flex; z-index: 5; }
+            body.view-editor .main-content { display: flex; flex: 1; }
+            body.view-editor .editor-pane { display: block; z-index: 5; }
+            body.view-preview .main-content { display: flex; flex: 1; }
+            body.view-preview .preview-pane { display: block; z-index: 5; }
+
+            /* Toolbar optimalisatie voor mobiel */
+            .toolbar { padding: 0 10px; gap: 8px; }
+            .title-input { font-size: 14px; }
+            .tool-btn span { display: none; } /* Verberg tekst in toolbar knoppen op mobiel */
+            .export-select { max-width: 120px; font-size: 11px; padding: 6px; }
+
+            /* Activeer mobiele nav */
+            .mobile-nav { display: flex; }
+        }
+    </style>
+</head>
+<body class="view-editor"> <div class="app-container">
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2><i class="fa-solid fa-book"></i> Mijn Drafts</h2>
+            <button class="btn-new" id="new-note-btn"><i class="fa-solid fa-plus"></i> Nieuw</button>
+        </div>
+        <ul class="notes-list" id="notes-list"></ul>
+    </div>
+
+    <div class="main-content">
+        <div class="toolbar">
+            <input type="text" id="note-title" class="title-input" placeholder="Naamloos blogontwerp...">
+            
+            <div class="toolbar-actions">
+                <input type="file" id="image-loader" accept="image/*" style="display: none;">
+                <button class="tool-btn" onclick="document.getElementById('image-loader').click()">
+                    <i class="fa-solid fa-image"></i> <span>+ Afbeelding</span>
+                </button>
+
+                <select class="export-select" id="export-action">
+                    <option value="" disabled selected>⚡ Export</option>
+                    <option value="wordpress">WordPress (HTML)</option>
+                    <option value="blogger">Blogger (HTML)</option>
+                    <option value="markdown">Markdown (.md)</option>
+                    <option value="json">JSON Backup (.json)</option>
+                </select>
+
+                <button class="tool-btn btn-delete" id="delete-note-btn"><i class="fa-solid fa-trash"></i></button>
+            </div>
+        </div>
+
+        <div class="workspace">
+            <div class="editor-pane">
+                <textarea id="markdown-editor" class="editor-textarea" placeholder="Schrijf in Markdown... Sleep afbeeldingen hierbinnen om ze direct (gecomprimeerd!) in te voegen."></textarea>
+            </div>
+            <div class="preview-pane" id="markdown-preview"></div>
+        </div>
+    </div>
+</div>
+
+<nav class="mobile-nav">
+    <button class="mobile-nav-btn" onclick="switchMobileView('list', this)">
+        <i class="fa-solid fa-list"></i>Lijst
+    </button>
+    <button class="mobile-nav-btn active" onclick="switchMobileView('editor', this)">
+        <i class="fa-solid fa-pen-to-square"></i>Editor
+    </button>
+    <button class="mobile-nav-btn" onclick="switchMobileView('preview', this)">
+        <i class="fa-solid fa-eye"></i>Preview
+    </button>
+</nav>
+
+<script>
+    // Applicatie State
+    let notes = JSON.parse(localStorage.getItem('local_drafts_notes')) || [];
+    let currentNoteId = localStorage.getItem('local_drafts_current_id') || null;
+
+    // DOM Elementen
+    const notesList = document.getElementById('notes-list');
+    const noteTitle = document.getElementById('note-title');
+    const markdownEditor = document.getElementById('markdown-editor');
+    const markdownPreview = document.getElementById('markdown-preview');
+    const newNoteBtn = document.getElementById('new-note-btn');
+    const deleteNoteBtn = document.getElementById('delete-note-btn');
+    const imageLoader = document.getElementById('image-loader');
+    const exportAction = document.getElementById('export-action');
+
+    // --- Performance: Debounce Functie voor vlijmscherpe PageSpeed ---
+    function debounce(func, wait = 150) {
+        let timeout;
+        return function(...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
+
+    // --- Mobiele View Switcher ---
+    function switchMobileView(viewName, buttonEl) {
+        document.body.className = 'view-' + viewName;
+        document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('active'));
+        if(buttonEl) buttonEl.classList.add('active');
+    }
+
+    function saveToLocalStorage() {
+        localStorage.setItem('local_drafts_notes', JSON.stringify(notes));
+        localStorage.setItem('local_drafts_current_id', currentNoteId);
+    }
+
+    function createNewNote() {
+        const newNote = {
+            id: 'note_' + Date.now(),
+            title: 'Nieuwe Blogpost ' + (notes.length + 1),
+            content: '# Nieuwe Blogpost\n\nBegin hier met schrijven...',
+            updatedAt: new Date().toLocaleString('nl-NL')
+        };
+        notes.unshift(newNote);
+        currentNoteId = newNote.id;
+        saveToLocalStorage();
+        renderNotesList();
+        loadCurrentNote();
+        
+        // Ga op mobiel direct naar de editor bij een nieuwe nota
+        if(window.innerWidth < 768) {
+            switchMobileView('editor', document.querySelectorAll('.mobile-nav-btn')[1]);
+        }
+    }
+
+    function renderNotesList() {
+        notesList.innerHTML = '';
+        if (notes.length === 0) {
+            notesList.innerHTML = '<li style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;">Geen ontwerpen.</li>';
+            return;
+        }
+
+        notes.forEach(note => {
+            const li = document.createElement('li');
+            li.className = `note-item ${note.id === currentNoteId ? 'active' : ''}`;
+            li.onclick = () => {
+                selectNote(note.id);
+                if(window.innerWidth < 768) {
+                    switchMobileView('editor', document.querySelectorAll('.mobile-nav-btn')[1]);
+                }
+            };
+
+            li.innerHTML = `
+                <div class="note-item-title">${escapeHTML(note.title || 'Naamloos')}</div>
+                <div class="note-item-date">${note.updatedAt}</div>
+            `;
+            notesList.appendChild(li);
+        });
+    }
+
+    function selectNote(id) {
+        currentNoteId = id;
+        saveToLocalStorage();
+        renderNotesList();
+        loadCurrentNote();
+    }
+
+    function loadCurrentNote() {
+        const note = notes.find(n => n.id === currentNoteId);
+        if (note) {
+            noteTitle.value = note.title;
+            markdownEditor.value = note.content;
+            updatePreview();
+            enableInputs(true);
+        } else {
+            noteTitle.value = '';
+            markdownEditor.value = '';
+            markdownPreview.innerHTML = '';
+            enableInputs(false);
+        }
+    }
+
+    function enableInputs(status) {
+        noteTitle.disabled = !status;
+        markdownEditor.disabled = !status;
+        exportAction.disabled = !status;
+    }
+
+    function updatePreview() {
+        if (typeof marked !== 'undefined' && markdownEditor.value) {
+            markdownPreview.innerHTML = marked.parse(markdownEditor.value);
+        }
+    }
+
+    // Hang de debounced versie aan het typen voor snelheid winst
+    const debouncedUpdatePreview = debounce(updatePreview, 150);
+
+    function deleteNote() {
+        if (!currentNoteId) return;
+        if (confirm('Weet je zeker dat je dit blogontwerp wilt verwijderen?')) {
+            notes = notes.filter(n => n.id !== currentNoteId);
+            currentNoteId = notes.length > 0 ? notes[0].id : null;
+            saveToLocalStorage();
+            renderNotesList();
+            loadCurrentNote();
+        }
+    }
+
+    function insertImageAtCursor(base64Data, fileName) {
+        const markdownImageTag = `\n![${fileName}](${base64Data})\n`;
+        const startPos = markdownEditor.selectionStart;
+        const endPos = markdownEditor.selectionEnd;
+        const currentText = markdownEditor.value;
+        
+        markdownEditor.value = currentText.substring(0, startPos) + markdownImageTag + currentText.substring(endPos, currentText.length);
+        markdownEditor.dispatchEvent(new Event('input'));
+        
+        markdownEditor.focus();
+        markdownEditor.selectionStart = markdownEditor.selectionEnd = startPos + markdownImageTag.length;
+    }
+
+    // --- Slimme Client-Side Compressie tegen LocalStorage Crashes ---
+    function handleFileSelect(file) {
+        if (!file || !file.type.match('image.*')) return;
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                
+                // Maximaal 1200px breedte/hoogte om database-ruimte te sparen
+                const maxDim = 1200;
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height *= maxDim / width;
+                        width = maxDim;
+                    } else {
+                        width *= maxDim / height;
+                        height = maxDim;
+                    }
+                }
+                
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                
+                // Direct omzetten naar gecomprimeerde JPEG (Kwaliteit 0.7)
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+                insertImageAtCursor(compressedBase64, file.name.replace(/\.[^/.]+$/, "") + ".jpg");
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // --- Universele Export Machine ---
+    function handleExport(platform) {
+        const note = notes.find(n => n.id === currentNoteId);
+        if (!note) return;
+
+        if (typeof marked === 'undefined') return;
+        const renderedHTML = marked.parse(note.content);
+        let fileContent = '';
+        let fileName = note.title.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        let mimeType = 'text/plain';
+
+        switch (platform) {
+            case 'wordpress':
+                fileContent = `\n\n${renderedHTML}`;
+                fileName += '_wordpress_import.html';
+                mimeType = 'text/html';
+                break;
+            case 'blogger':
+                fileContent = `<div>\n<h1>${note.title}</h1>\n\n${renderedHTML}\n</div>`;
+                fileName += '_blogger_import.html';
+                mimeType = 'text/html';
+                break;
+            case 'markdown':
+                fileContent = `# ${note.title}\n\n${note.content}`;
+                fileName += '.md';
+                mimeType = 'text/markdown';
+                break;
+            case 'json':
+                fileContent = JSON.stringify(note, null, 2);
+                fileName += '_backup.json';
+                mimeType = 'application/json';
+                break;
+        }
+
+        downloadFile(fileContent, fileName, mimeType);
+        exportAction.value = "";
+    }
+
+    function downloadFile(content, fileName, contentType) {
+        const a = document.createElement("a");
+        const file = new Blob([content], {type: contentType});
+        a.href = URL.createObjectURL(file);
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    }
+
+    function escapeHTML(str) {
+        return str.replace(/[&<>'"]/g, 
+            tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+        );
+    }
+
+    // --- Event Listeners ---
+    markdownEditor.addEventListener('input', (e) => {
+        const note = notes.find(n => n.id === currentNoteId);
+        if (note) {
+            note.content = e.target.value;
+            note.updatedAt = new Date().toLocaleString('nl-NL');
+            saveToLocalStorage();
+            debouncedUpdatePreview(); // Performance-boosted preview update
+        }
+    });
+
+    noteTitle.addEventListener('input', (e) => {
+        const note = notes.find(n => n.id === currentNoteId);
+        if (note) {
+            note.title = e.target.value;
+            note.updatedAt = new Date().toLocaleString('nl-NL');
+            saveToLocalStorage();
+            renderNotesList();
+        }
+    });
+
+    newNoteBtn.addEventListener('click', createNewNote);
+    deleteNoteBtn.addEventListener('click', deleteNote);
+    exportAction.addEventListener('change', (e) => handleExport(e.target.value));
+
+    imageLoader.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) handleFileSelect(e.target.files[0]);
+    });
+
+    markdownEditor.addEventListener('dragover', (e) => { e.preventDefault(); markdownEditor.classList.add('drag-over'); });
+    markdownEditor.addEventListener('dragleave', () => markdownEditor.classList.remove('drag-over'));
+    markdownEditor.addEventListener('drop', (e) => {
+        e.preventDefault();
+        markdownEditor.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) handleFileSelect(e.dataTransfer.files[0]);
+    });
+
+    // Applicatie Opstarten
+    window.addEventListener('DOMContentLoaded', () => {
+        if (notes.length > 0) {
+            if (!currentNoteId || !notes.some(n => n.id === currentNoteId)) {
+                currentNoteId = notes[0].id;
+            }
+            renderNotesList();
+            loadCurrentNote();
+        } else {
+            createNewNote();
+        }
+        
+        // Zorg dat marked opstart na het laden van de defer link
+        setTimeout(updatePreview, 300);
+    });
+</script>
+</body>
+</html>
